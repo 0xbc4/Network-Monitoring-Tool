@@ -54,8 +54,8 @@ The solution provides:
 ## Folder Structure
 
 ```text
-Camera Server Monitoring
-├── CameraServers-Check.ps1
+Network Device Monitoring
+├── NetworkMonitor.ps1
 ├── Setup-SMTP Credentials.ps1
 ├── config.json
 ├── servers.json
@@ -71,14 +71,14 @@ Follow these steps in order before running the monitoring service.
 1. Edit the values in `config.json` and `servers.json` for your environment.
 2. Run `Setup-SMTP Credentials.ps1` once to create the encrypted SMTP credential file.
 3. Confirm that `smtp_cred.xml` was generated successfully.
-4. Run `CameraServers-Check.ps1` to start monitoring.
+4. Run `NetworkMonitor.ps1` to start monitoring.
 
 ```powershell
 # 1) Create the encrypted SMTP credential file
 .\Setup-SMTP Credentials.ps1
 
 # 2) Start the monitoring loop
-.\CameraServers-Check.ps1
+.\NetworkMonitor.ps1
 ```
 
 > Important: Run the SMTP setup script before the main monitor. The monitor loads the encrypted credential file from `config.json` to send email alerts.
