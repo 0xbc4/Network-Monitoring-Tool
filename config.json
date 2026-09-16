@@ -1,0 +1,20 @@
+﻿{
+  "SmtpServer": "smtp.example.com",
+  "SmtpPort": 587,
+  "LogFolder": "C:\\Monitoring\\Logs",
+  "ReportFolder": "C:\\Monitoring\\Reports",
+  "CredentialFile": "C:\\Monitoring\\smtp_cred.xml",
+  "CheckIntervalSeconds": 60,
+  "RetryCount": 3,
+  "RetryDelaySeconds": 1,
+  "Recipients": [
+    {
+      "Email": "admin@example.com",
+      "Enabled": true
+    },
+    {
+      "Email": "ops@example.com",
+      "Enabled": true
+    }
+  ]
+}
