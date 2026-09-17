@@ -12,6 +12,7 @@
   "RetryCount": 3,
   "RetryDelaySeconds": 1,
   "PingTimeoutMilliseconds": 1000,
+  "AlertCooldownSeconds": 300,
   "Recipients": [
     {
       "Email": "admin@example.com",

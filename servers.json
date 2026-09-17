@@ -15,7 +15,7 @@
                     {
                         "Name":  "Example-Camera-01",
                         "IP":  "192.168.1.20",
-                        "Enabled":  true,
+                        "Enabled":  false,
                         "Critical":  true
                     },
                     {

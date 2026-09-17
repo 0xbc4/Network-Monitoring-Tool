@@ -4,6 +4,8 @@
 param(
     [switch]$Once,
     [switch]$NoDashboard,
+    [switch]$NoRun,
+    [switch]$SelfTest,
     [string]$ConfigFile,
     [string]$ServerFile
 )
@@ -21,6 +23,61 @@ function Get-SmtpCredential {
 
     $securePassword = ConvertTo-SecureString -String $smtpPassword -AsPlainText -Force
     return [PSCredential]::new($smtpUsername, $securePassword)
+}
+
+function Test-MonitorConfiguration {
+    param($MonitorConfig, $MonitorServers)
+
+    $validModes = @("disabled", "stdout", "test-safe", "smtp")
+    $mode = if ($MonitorConfig.NotificationMode) { $MonitorConfig.NotificationMode.ToString().ToLowerInvariant() } else { "disabled" }
+    if ($mode -notin $validModes) { throw "Invalid NotificationMode '$($MonitorConfig.NotificationMode)'." }
+
+    foreach ($setting in @("CheckIntervalSeconds", "RetryCount", "PingTimeoutMilliseconds")) {
+        $number = 0
+        if (-not [int]::TryParse([string]$MonitorConfig.$setting, [ref]$number) -or $number -lt 1) {
+            throw "Configuration value '$setting' must be an integer of at least 1."
+        }
+    }
+    foreach ($setting in @("RetryDelaySeconds", "AlertCooldownSeconds")) {
+        $number = 0
+        if (-not [int]::TryParse([string]$MonitorConfig.$setting, [ref]$number) -or $number -lt 0) {
+            throw "Configuration value '$setting' must be a non-negative integer."
+        }
+    }
+
+    if ($mode -eq "smtp") {
+        $port = 0
+        if ([string]::IsNullOrWhiteSpace($MonitorConfig.SmtpServer) -or -not [string]::IsNullOrWhiteSpace([string]$MonitorConfig.SmtpServer) -and -not [System.Net.Dns]::GetHostAddresses($MonitorConfig.SmtpServer).Count -gt 0) {
+            $null = $MonitorConfig.SmtpServer
+        }
+    }
+
+    foreach ($device in @($MonitorServers.Devices)) {
+        if ([string]::IsNullOrWhiteSpace($device.Name) -or [string]::IsNullOrWhiteSpace($device.IP)) {
+            throw "Each device must have both Name and IP values."
+        }
+    }
+
+    if ($mode -eq "smtp") {
+        $port = 0
+        if ([string]::IsNullOrWhiteSpace($MonitorConfig.SmtpServer) -or
+            -not [int]::TryParse([string]$MonitorConfig.SmtpPort, [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
+            throw "SMTP mode requires a server name and a port between 1 and 65535."
+        }
+        if (-not $MonitorConfig.Recipients -or @($MonitorConfig.Recipients).Count -eq 0) {
+            throw "SMTP mode requires at least one configured recipient."
+        }
+        $enabledRecipients = @($MonitorConfig.Recipients | Where-Object { $_.Enabled -eq $true })
+        if ($enabledRecipients.Count -eq 0) { throw "SMTP mode requires at least one enabled recipient." }
+        foreach ($recipient in $enabledRecipients) {
+            if ([string]::IsNullOrWhiteSpace($recipient.Email)) {
+                throw "SMTP recipient email cannot be empty."
+            }
+            try { [void][System.Net.Mail.MailAddress]::new($recipient.Email) }
+            catch { throw "Invalid SMTP recipient address '$($recipient.Email)'." }
+        }
+    }
+    return $mode
 }
 
 # IMPORTANT:
@@ -56,33 +113,11 @@ catch {
     exit 1
 }
 
-$validNotificationModes = @("disabled", "stdout", "test-safe", "smtp")
-$notificationMode = if ($config.NotificationMode) { $config.NotificationMode.ToString().ToLowerInvariant() } else { "disabled" }
-if ($notificationMode -notin $validNotificationModes) {
-    Write-Host "Invalid NotificationMode '$($config.NotificationMode)'. Valid values: $($validNotificationModes -join ', ')." -ForegroundColor Red
-    exit 1
-}
-
-foreach ($setting in @("CheckIntervalSeconds", "RetryCount", "PingTimeoutMilliseconds")) {
-    if ($null -eq $config.$setting -or [int]$config.$setting -lt 1) {
-        Write-Host "Configuration value '$setting' must be at least 1." -ForegroundColor Red
-        exit 1
-    }
-}
-if ($null -eq $config.RetryDelaySeconds -or [int]$config.RetryDelaySeconds -lt 0) {
-    Write-Host "Configuration value 'RetryDelaySeconds' must be zero or greater." -ForegroundColor Red
-    exit 1
-}
-
-foreach ($device in @($servers.Devices)) {
-    if ([string]::IsNullOrWhiteSpace($device.Name) -or [string]::IsNullOrWhiteSpace($device.IP)) {
-        Write-Host "Each device must have both Name and IP values." -ForegroundColor Red
-        exit 1
-    }
-}
+try { $notificationMode = Test-MonitorConfiguration -MonitorConfig $config -MonitorServers $servers }
+catch { Write-Host "Configuration validation failed: $($_.Exception.Message)" -ForegroundColor Red; exit 1 }
 
 # Paths may be absolute for service deployments or relative to this script for portable use.
-foreach ($pathSetting in @("LogFolder", "ReportFolder")) {
+foreach ($pathSetting in @("LogFolder", "ReportFolder", "AlertStateFolder")) {
     if ($config.$pathSetting -and -not [System.IO.Path]::IsPathRooted($config.$pathSetting)) {
         $config.$pathSetting = Join-Path $PSScriptRoot $config.$pathSetting
     }
@@ -102,6 +137,7 @@ $global:dashboardStatus = @{}
 $script:config = $config
 $script:servers = $servers
 $script:notificationMode = $notificationMode
+$global:notificationLastSent = @{}
 
 
 $script:recipients = @(
@@ -189,6 +225,91 @@ function Write-LogEntry {
     Write-Host $line -ForegroundColor DarkGray
 }
 
+function Invoke-MonitorSelfTest {
+    try {
+        $cfg = Get-Content $configFile -Raw | ConvertFrom-Json -ErrorAction Stop
+        $servers = Get-Content $serverFile -Raw | ConvertFrom-Json -ErrorAction Stop
+        $mode = Test-MonitorConfiguration -MonitorConfig $cfg -MonitorServers $servers
+        if ($mode -notin @("disabled", "stdout", "test-safe", "smtp")) {
+            throw "Unexpected notification mode returned by configuration validation: $mode"
+        }
+
+        $loopback = Test-IPAvailability -IP "127.0.0.1"
+        if (-not $loopback.Success) {
+            throw "Loopback ping validation failed. ICMP checks are not working on this machine."
+        }
+
+        $global:serverStatus = @{}
+        $global:dashboardStatus = @{}
+        $global:notificationLastSent = @{}
+        Test-IPConnection -ip "127.0.0.1" -name "SelfTest-Loopback" -critical $true
+        if (-not $global:serverStatus.ContainsKey("127.0.0.1") -or $global:serverStatus["127.0.0.1"] -ne $true) {
+            throw "Device status was not updated after a successful loopback check."
+        }
+
+        Send-AlertMail -Name "SelfTest-Alert" -IP "127.0.0.1" -Critical $true
+        Send-RecoveryMail -Name "SelfTest-Recovery" -IP "127.0.0.1"
+
+        $invalidSmtp = [pscustomobject]@{
+            NotificationMode = "smtp"
+            SmtpServer = ""
+            SmtpPort = "0"
+            Recipients = @(@{ Email = "invalid@"; Enabled = $true })
+            CheckIntervalSeconds = 60
+            RetryCount = 3
+            PingTimeoutMilliseconds = 1000
+            RetryDelaySeconds = 1
+            AlertCooldownSeconds = 300
+        }
+
+        try {
+            Test-MonitorConfiguration -MonitorConfig $invalidSmtp -MonitorServers $servers | Out-Null
+            throw "Invalid SMTP configuration should have failed validation."
+        }
+        catch {
+            if ($_.Exception.Message -notmatch "SMTP mode requires|SMTP recipient email cannot be empty|Invalid SMTP recipient address") {
+                throw
+            }
+        }
+
+        Write-Host "Self-test passed: config validation, ping loopback check, recovery logic, and SMTP validation checks are all successful." -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Self-test failed: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+}
+
+function Is-NotificationRateLimited {
+    param(
+        [string]$Kind,
+        [string]$DeviceName,
+        [string]$DeviceIP
+    )
+
+    $cooldownSeconds = 0
+    if ($null -ne $script:config -and $script:config.AlertCooldownSeconds) {
+        $cooldownSeconds = [int]$script:config.AlertCooldownSeconds
+    }
+
+    if ($cooldownSeconds -le 0) {
+        return $false
+    }
+
+    $key = "$Kind|$DeviceName|$DeviceIP"
+    $now = Get-Date
+
+    if ($global:notificationLastSent.ContainsKey($key)) {
+        $lastSentAt = $global:notificationLastSent[$key]
+        if (($now - $lastSentAt).TotalSeconds -lt $cooldownSeconds) {
+            return $true
+        }
+    }
+
+    $global:notificationLastSent[$key] = $now
+    return $false
+}
+
 function Send-NotificationMessage {
     param(
         [string]$Subject,
@@ -258,6 +379,11 @@ function Send-AlertMail {
         return
     }
 
+    if (Is-NotificationRateLimited -Kind "Alert" -DeviceName $Name -DeviceIP $IP) {
+        Write-LogEntry "ALERT RATE-LIMITED - $Name ($IP) - $(if ($Critical) { '[CRITICAL]' } else { '[WARNING]' })"
+        return
+    }
+
     if ($Critical) {
         $subject = "[CRITICAL] $Name Unreachable"
     }
@@ -298,6 +424,11 @@ function Send-RecoveryMail {
     if ($script:notificationMode -eq "test-safe") {
         Write-Host "[TEST SAFE MODE] Recovery suppressed for $Name ($IP)" -ForegroundColor Yellow
         Write-LogEntry "RECOVERY SUPPRESSED - $Name ($IP)"
+        return
+    }
+
+    if (Is-NotificationRateLimited -Kind "Recovery" -DeviceName $Name -DeviceIP $IP) {
+        Write-LogEntry "RECOVERY RATE-LIMITED - $Name ($IP)"
         return
     }
 
@@ -1694,6 +1825,11 @@ function Import-Config {
 # ==========================================
 # Main Loop
 # ==========================================
+
+if ($SelfTest) {
+    Invoke-MonitorSelfTest
+    exit 0
+}
 
 
 while ($true) {

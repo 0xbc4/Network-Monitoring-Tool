@@ -84,7 +84,28 @@ Network Monitoring Tool/
 
 Update the values in [config.json](config.json) and [servers.json](servers.json) for your deployment.
 
-### 2. Configure SMTP credentials (only for `smtp` mode)
+### 2. Create the Linux service account and writable directories
+
+For a systemd deployment on Linux, create the dedicated service account and directory structure before installing the service file:
+
+```bash
+sudo groupadd --system network-monitor
+sudo useradd --system \
+  --gid network-monitor \
+  --home-dir /opt/network-monitor \
+  --shell /usr/sbin/nologin \
+  network-monitor
+
+sudo install -d -o network-monitor -g network-monitor -m 0755 /opt/network-monitor
+sudo install -d -o network-monitor -g network-monitor -m 0755 /etc/network-monitor
+sudo install -d -o network-monitor -g network-monitor -m 0755 /var/lib/network-monitor
+sudo install -d -o network-monitor -g network-monitor -m 0755 /var/lib/network-monitor/Logs
+sudo install -d -o network-monitor -g network-monitor -m 0755 /var/lib/network-monitor/Reports
+```
+
+The monitoring service should run under `network-monitor`, and the writable state directories must be owned by that account so logs and reports can be written at runtime.
+
+### 3. Configure SMTP credentials (only for `smtp` mode)
 
 ```powershell
 .\Setup-SMTP Credentials.ps1
@@ -94,7 +115,27 @@ On Windows, this stores the credentials in user-level environment variables. On
 Linux, set the variables in the calling shell or in a protected systemd
 environment file. No credential file is shared between operating systems.
 
-### 3. Start the monitoring tool
+Example `smtp.env` file for systemd:
+
+```bash
+sudo tee /etc/network-monitor/smtp.env >/dev/null <<'EOF'
+NETWORK_MONITOR_SMTP_USERNAME=monitor@example.com
+NETWORK_MONITOR_SMTP_PASSWORD=replace-with-a-secret
+EOF
+sudo chown root:root /etc/network-monitor/smtp.env
+sudo chmod 600 /etc/network-monitor/smtp.env
+```
+
+### 4. Install the systemd service
+
+```bash
+sudo cp docs/systemd/network-monitor.service /etc/systemd/system/network-monitor.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now network-monitor
+sudo systemctl status network-monitor --no-pager
+```
+
+### 5. Start the monitoring tool locally
 
 ```powershell
 .\NetworkMonitor.ps1
@@ -106,9 +147,15 @@ For a single non-interactive check (useful for Task Scheduler and validation), r
 .\NetworkMonitor.ps1 -Once -NoDashboard
 ```
 
-### 4. Validate in safe mode
+### 6. Validate in safe mode
 
 The project is currently configured to use a safe no-noise validation mode by default, which suppresses real alert delivery while allowing monitoring behavior to be tested safely.
+
+To run the built-in validation checks without starting the live dashboard, use:
+
+```powershell
+.\NetworkMonitor.ps1 -SelfTest
+```
 
 ## Configuration
 
@@ -131,6 +178,7 @@ The project reads its runtime configuration from JSON files so key settings rema
   "RetryCount": 3,
   "RetryDelaySeconds": 1,
   "PingTimeoutMilliseconds": 1000,
+  "AlertCooldownSeconds": 300,
   "Recipients": [
     { "Email": "admin@example.com", "Enabled": true },
     { "Email": "ops@example.com", "Enabled": true }

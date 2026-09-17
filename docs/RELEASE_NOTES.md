@@ -1,6 +1,6 @@
 # Release Notes
 
-## v0.2.0-alpha
+## v0.2.0
 
 ### Highlights
 - Added validation for configuration files, notification modes, device entries, and polling values.
@@ -12,11 +12,16 @@
 - Replaced Windows-only encrypted CLIXML SMTP credentials with environment variables.
 - Replaced `Send-MailMessage` with platform-neutral .NET SMTP delivery and added a systemd service example.
 - Validated the non-interactive monitoring path on Linux with PowerShell 7.6.2 in test-safe mode.
+- Added `-SelfTest` for configuration, loopback, recovery, and SMTP validation checks.
+- Added stricter SMTP validation for server, port, enabled recipients, and recipient address format.
+- Added configurable alert and recovery cooldown handling through `AlertCooldownSeconds`.
+- Documented the `network-monitor` system user, writable runtime directories, protected SMTP environment file, and systemd installation steps.
 
 ### Upgrade Notes
 - Add `"PingTimeoutMilliseconds": 1000` to existing configuration files.
 - The default configuration uses project-relative `Logs` and `Reports` paths.
 - SMTP mode now reads `NETWORK_MONITOR_SMTP_USERNAME` and `NETWORK_MONITOR_SMTP_PASSWORD` by default.
+- Existing configurations should add `AlertCooldownSeconds`; the default configuration uses `300` seconds.
 
 ## v0.1.0-alpha
 
