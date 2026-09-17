@@ -69,9 +69,10 @@ Network Monitoring Tool/
 ├── config.json
 ├── servers.json
 ├── README.md
-├── RELEASE_NOTES.md
-├── BETA_ROADMAP.md
 ├── LICENSE
+├── docs/
+│   ├── RELEASE_NOTES.md
+│   └── BETA_ROADMAP.md
 ├── Logs/
 ├── Reports/
 └── test-env/
@@ -166,8 +167,8 @@ The notification layer supports several modes depending on deployment stage:
 
 ## Documentation
 
-- [RELEASE_NOTES.md](RELEASE_NOTES.md)
-- [BETA_ROADMAP.md](BETA_ROADMAP.md)
+- [Release Notes](docs/RELEASE_NOTES.md)
+- [Beta Roadmap](docs/BETA_ROADMAP.md)
 
 ## License
 
