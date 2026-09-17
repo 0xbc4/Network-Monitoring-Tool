@@ -20,7 +20,7 @@ The tool currently supports:
 
 This repository is currently in alpha stage and is tagged as:
 
-- v0.1.0-alpha
+- v0.1.1-alpha
 
 The project is intentionally positioned as a practical test and validation release before the beta iteration, where the monitoring logic, alert pipeline, and Linux deployment model will be hardened further.
 
@@ -127,12 +127,16 @@ The project reads its runtime configuration from JSON files so key settings rema
   "CheckIntervalSeconds": 60,
   "RetryCount": 3,
   "RetryDelaySeconds": 1,
+  "PingTimeoutMilliseconds": 1000,
   "Recipients": [
     { "Email": "admin@example.com", "Enabled": true },
     { "Email": "ops@example.com", "Enabled": true }
   ]
 }
 ```
+
+`PingTimeoutMilliseconds` limits each ICMP attempt. The default `1000` keeps an
+unreachable device from delaying a monitoring cycle for several seconds.
 
 ### Example device list
 

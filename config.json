@@ -10,6 +10,7 @@
   "CheckIntervalSeconds": 60,
   "RetryCount": 3,
   "RetryDelaySeconds": 1,
+  "PingTimeoutMilliseconds": 1000,
   "Recipients": [
     {
       "Email": "admin@example.com",

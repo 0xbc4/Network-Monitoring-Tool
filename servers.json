@@ -1,28 +1,28 @@
 ﻿{
-  "Devices": [
-    {
-      "Name": "Example-Server-01", 
-      "IP": "192.168.1.10",
-      "Enabled": true,
-      "Critical": true
-    },
-    {
-      "Name": "Example-Storage-01",
-      "IP": "192.168.1.11",
-      "Enabled": true,
-      "Critical": true
-    },
-    {
-      "Name": "Example-Camera-01",
-      "IP": "192.168.1.20",
-      "Enabled": true,
-      "Critical": true
-    },
-    {
-      "Name": "Example-Camera-02",
-      "IP": "192.168.1.21",
-      "Enabled": true,
-      "Critical": true
-    }
-  ]
+    "Devices":  [
+                    {
+                        "Name":  "Example-Server-01",
+                        "IP":  "192.168.1.10",
+                        "Enabled":  true,
+                        "Critical":  true
+                    },
+                    {
+                        "Name":  "Example-Storage-01",
+                        "IP":  "192.168.1.11",
+                        "Enabled":  true,
+                        "Critical":  true
+                    },
+                    {
+                        "Name":  "Example-Camera-01",
+                        "IP":  "192.168.1.20",
+                        "Enabled":  true,
+                        "Critical":  true
+                    },
+                    {
+                        "Name":  "Example-Camera-02",
+                        "IP":  "192.168.1.21",
+                        "Enabled":  false,
+                        "Critical":  true
+                    }
+                ]
 }

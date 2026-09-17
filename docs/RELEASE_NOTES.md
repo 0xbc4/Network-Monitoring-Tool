@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.1.1-alpha
+
+### Highlights
+- Added validation for configuration files, notification modes, device entries, and polling values.
+- Made log, report, and credential paths portable by resolving relative paths from the project folder.
+- Allowed `test-safe`, `stdout`, and `disabled` notification modes to run without SMTP credentials.
+- Added `-Once` and `-NoDashboard` options for scheduled and non-interactive checks.
+- Prevented the device-management Back action from blocking while it rechecks every enabled device.
+- Added a configurable ICMP timeout through `PingTimeoutMilliseconds`.
+
+### Upgrade Notes
+- Add `"PingTimeoutMilliseconds": 1000` to existing configuration files.
+- The default configuration now uses project-relative `Logs`, `Reports`, and `smtp_cred.xml` paths.
+
 ## v0.1.0-alpha
 
 ### Overview

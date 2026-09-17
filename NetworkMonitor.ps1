@@ -46,7 +46,7 @@ if ($notificationMode -notin $validNotificationModes) {
     exit 1
 }
 
-foreach ($setting in @("CheckIntervalSeconds", "RetryCount")) {
+foreach ($setting in @("CheckIntervalSeconds", "RetryCount", "PingTimeoutMilliseconds")) {
     if ($null -eq $config.$setting -or [int]$config.$setting -lt 1) {
         Write-Host "Configuration value '$setting' must be at least 1." -ForegroundColor Red
         exit 1
@@ -346,15 +346,21 @@ function Test-IPAvailability {
         try {
 
 
-            $reply = Test-Connection `
-                -ComputerName $IP `
-                -Count 1 `
-                -ErrorAction Stop
+            $pingClient = [System.Net.NetworkInformation.Ping]::new()
+            try {
+                $reply = $pingClient.Send($IP, [int]$script:config.PingTimeoutMilliseconds)
+            }
+            finally {
+                $pingClient.Dispose()
+            }
 
+            if ($reply.Status -ne [System.Net.NetworkInformation.IPStatus]::Success) {
+                throw "Ping failed with status: $($reply.Status)"
+            }
 
             return @{
                 Success = $true
-                Latency = $reply.ResponseTime
+                Latency = $reply.RoundtripTime
             }
         }
         catch {
@@ -1510,13 +1516,9 @@ function Show-LiveDashboard {
             '1' {
                 Show-DeviceManagement
 
-                # The device list may have changed and needs to be reloaded.
+                # Device changes reload their configuration when saved. Do not block
+                # returning to the dashboard by pinging every enabled device again.
                 Import-Config
-
-                if ($global:ipAddresses.Count -gt 0) {
-                    Test-AllDevices
-                }
-
                 $currentPage = 0
             }
 
