@@ -1,4 +1,7 @@
 ﻿{
+  "NotificationMode": "test-safe",
+  "AlertTransport": "smtp",
+  "SecureEmailMode": "disabled",
   "SmtpServer": "smtp.example.com",
   "SmtpPort": 587,
   "LogFolder": "C:\\Monitoring\\Logs",
