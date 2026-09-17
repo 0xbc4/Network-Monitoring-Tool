@@ -361,12 +361,12 @@ function Test-IPConnection {
     }
     else {
 
-    	# Cihaz zaten DOWN ise ilk DOWN zamanÄ±nÄ± koru
-    	if (
-        	$dashboardStatus.ContainsKey($ip) -and
-        	$dashboardStatus[$ip].Status -eq "DOWN" -and
-        	$null -ne $dashboardStatus[$ip].DownSince
-    	) {
+        # Preserve the initial DOWN timestamp so the outage duration remains accurate.
+        if (
+            $dashboardStatus.ContainsKey($ip) -and
+            $dashboardStatus[$ip].Status -eq "DOWN" -and
+            $null -ne $dashboardStatus[$ip].DownSince
+        ) {
         	$downSince = $dashboardStatus[$ip].DownSince
     	}
     	else {
@@ -1294,7 +1294,7 @@ function Show-LiveDashboard {
             $totalPages = 1
         }
 
-        # Sayfa sÄ±nÄ±rlarÄ±nÄ± kontrol et
+        # Validate page boundaries before rendering the list.
         if ($currentPage -ge $totalPages) {
             $currentPage = $totalPages - 1
         }
@@ -1344,15 +1344,15 @@ function Show-LiveDashboard {
         		"Red"
     		}
 
-    		# Uzun cihaz isimlerini kÄ±salt
-    		$displayName = $device.Name
+# Truncate long device names for display consistency.
+            $displayName = $device.Name
 
-    		if ($displayName.Length -gt 35) {
-        		$displayName = $displayName.Substring(0, 32) + "..."
-    		}
+            if ($displayName.Length -gt 35) {
+                $displayName = $displayName.Substring(0, 32) + "..."
+            }
 
-    		# DOWN sÃ¼resini hesapla
-    		if ($device.Status -eq "DOWN" -and $null -ne $device.DownSince) {
+            # Calculate the total duration for devices currently marked as DOWN.
+            if ($device.Status -eq "DOWN" -and $null -ne $device.DownSince) {
 
         		$downSinceDisplay = $device.DownSince.ToString("HH:mm:ss")
 
@@ -1447,7 +1447,7 @@ function Show-LiveDashboard {
             '1' {
                 Show-DeviceManagement
 
-                # Cihaz listesi deÄŸiÅŸmiÅŸ olabilir
+                # The device list may have changed and needs to be reloaded.
                 Import-Config
 
                 if ($global:ipAddresses.Count -gt 0) {
