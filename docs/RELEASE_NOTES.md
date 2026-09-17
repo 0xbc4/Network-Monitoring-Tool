@@ -11,6 +11,7 @@
 - Added a configurable ICMP timeout through `PingTimeoutMilliseconds`.
 - Replaced Windows-only encrypted CLIXML SMTP credentials with environment variables.
 - Replaced `Send-MailMessage` with platform-neutral .NET SMTP delivery and added a systemd service example.
+- Validated the non-interactive monitoring path on Linux with PowerShell 7.6.2 in test-safe mode.
 
 ### Upgrade Notes
 - Add `"PingTimeoutMilliseconds": 1000` to existing configuration files.

@@ -197,10 +197,15 @@ Then restrict it with `chmod 600 /etc/network-monitor/smtp.env`, run
 `systemctl daemon-reload`, and enable the service with
 `systemctl enable --now network-monitor`.
 
+The monitoring path has been validated on Linux with PowerShell 7.6.2 in
+`test-safe` mode. See the [Linux validation record](docs/LINUX_VALIDATION.md)
+for the test scope and remaining deployment checks.
+
 ## Documentation
 
 - [Release Notes](docs/RELEASE_NOTES.md)
 - [Beta Roadmap](docs/BETA_ROADMAP.md)
+- [Linux Validation Record](docs/LINUX_VALIDATION.md)
 
 ## License
 
