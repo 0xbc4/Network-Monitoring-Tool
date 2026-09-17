@@ -98,6 +98,12 @@ This creates a local encrypted XML credential file used by the monitoring script
 .\NetworkMonitor.ps1
 ```
 
+For a single non-interactive check (useful for Task Scheduler and validation), run:
+
+```powershell
+.\NetworkMonitor.ps1 -Once -NoDashboard
+```
+
 ### 4. Validate in safe mode
 
 The project is currently configured to use a safe no-noise validation mode by default, which suppresses real alert delivery while allowing monitoring behavior to be tested safely.
@@ -115,9 +121,9 @@ The project reads its runtime configuration from JSON files so key settings rema
   "SecureEmailMode": "disabled",
   "SmtpServer": "smtp.example.com",
   "SmtpPort": 587,
-  "LogFolder": "C:\\Monitoring\\Logs",
-  "ReportFolder": "C:\\Monitoring\\Reports",
-  "CredentialFile": "C:\\Monitoring\\smtp_cred.xml",
+  "LogFolder": "Logs",
+  "ReportFolder": "Reports",
+  "CredentialFile": "smtp_cred.xml",
   "CheckIntervalSeconds": 60,
   "RetryCount": 3,
   "RetryDelaySeconds": 1,
@@ -158,6 +164,7 @@ The notification layer supports several modes depending on deployment stage:
 - No plaintext credentials should be committed to the repository
 - Production IP ranges and internal hostnames should remain outside public source control
 - The safe test mode is recommended before enabling real delivery in production
+- Relative log, report, and credential paths are resolved from the project folder; absolute paths remain supported.
 
 ## Operational Notes
 

@@ -1,6 +1,11 @@
 ﻿# ==========================================
 # Configuration Loading
 # ==========================================
+param(
+    [switch]$Once,
+    [switch]$NoDashboard
+)
+
 # IMPORTANT:
 # - The script reads its runtime settings from JSON files in the same folder.
 # - Keep config.json and servers.json outside the repo if they contain production data.
@@ -25,8 +30,46 @@ if (-not (Test-Path $serverFile)) {
 
 
 
-$config = Get-Content $configFile -Raw | ConvertFrom-Json
-$servers = Get-Content $serverFile -Raw | ConvertFrom-Json
+try {
+    $config = Get-Content $configFile -Raw | ConvertFrom-Json -ErrorAction Stop
+    $servers = Get-Content $serverFile -Raw | ConvertFrom-Json -ErrorAction Stop
+}
+catch {
+    Write-Host "Configuration could not be parsed: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
+$validNotificationModes = @("disabled", "stdout", "test-safe", "smtp")
+$notificationMode = if ($config.NotificationMode) { $config.NotificationMode.ToString().ToLowerInvariant() } else { "disabled" }
+if ($notificationMode -notin $validNotificationModes) {
+    Write-Host "Invalid NotificationMode '$($config.NotificationMode)'. Valid values: $($validNotificationModes -join ', ')." -ForegroundColor Red
+    exit 1
+}
+
+foreach ($setting in @("CheckIntervalSeconds", "RetryCount")) {
+    if ($null -eq $config.$setting -or [int]$config.$setting -lt 1) {
+        Write-Host "Configuration value '$setting' must be at least 1." -ForegroundColor Red
+        exit 1
+    }
+}
+if ($null -eq $config.RetryDelaySeconds -or [int]$config.RetryDelaySeconds -lt 0) {
+    Write-Host "Configuration value 'RetryDelaySeconds' must be zero or greater." -ForegroundColor Red
+    exit 1
+}
+
+foreach ($device in @($servers.Devices)) {
+    if ([string]::IsNullOrWhiteSpace($device.Name) -or [string]::IsNullOrWhiteSpace($device.IP)) {
+        Write-Host "Each device must have both Name and IP values." -ForegroundColor Red
+        exit 1
+    }
+}
+
+# Paths may be absolute for service deployments or relative to this script for portable use.
+foreach ($pathSetting in @("LogFolder", "ReportFolder", "CredentialFile")) {
+    if ($config.$pathSetting -and -not [System.IO.Path]::IsPathRooted($config.$pathSetting)) {
+        $config.$pathSetting = Join-Path $PSScriptRoot $config.$pathSetting
+    }
+}
 
 
 
@@ -39,7 +82,9 @@ $servers = Get-Content $serverFile -Raw | ConvertFrom-Json
 # from UP -> DOWN and DOWN -> UP without sending duplicate alerts.
 $global:serverStatus = @{}
 $global:dashboardStatus = @{}
-$script:notificationMode = if ($config.NotificationMode) { $config.NotificationMode } else { "smtp" }
+$script:config = $config
+$script:servers = $servers
+$script:notificationMode = $notificationMode
 
 
 $script:recipients = @(
@@ -53,8 +98,22 @@ $script:smtpPort = $config.SmtpPort
 
 # SMTP credentials are loaded from an encrypted XML file created locally.
 # This keeps passwords out of the source code and prevents accidental commits.
-$credential = Import-Clixml $config.CredentialFile
-$username = $credential.UserName
+$script:credential = $null
+$script:username = $null
+if ($script:notificationMode -eq "smtp") {
+    if (-not $config.CredentialFile -or -not (Test-Path $config.CredentialFile)) {
+        Write-Host "SMTP mode requires a valid CredentialFile. Run '.\Setup-SMTP Credentials.ps1' first." -ForegroundColor Red
+        exit 1
+    }
+    try {
+        $script:credential = Import-Clixml $config.CredentialFile -ErrorAction Stop
+        $script:username = $script:credential.UserName
+    }
+    catch {
+        Write-Host "SMTP credential could not be loaded: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+}
 
 
 $global:ipAddresses = @(
@@ -63,7 +122,7 @@ $global:ipAddresses = @(
 )
 
 
-$lastAlert = "None"
+$global:lastAlert = "None"
 
 
 
@@ -125,7 +184,7 @@ function Send-NotificationMessage {
         [string]$DeviceIP
     )
 
-    $mode = if ($script:config -and $script:config.NotificationMode) { $script:config.NotificationMode } else { "smtp" }
+    $mode = $script:notificationMode
 
     switch ($mode) {
         "disabled" {
@@ -143,6 +202,10 @@ function Send-NotificationMessage {
             return
         }
         default {
+            if (-not $script:credential -or -not $script:username -or @($script:recipients).Count -eq 0) {
+                Write-LogEntry "NOTIFICATION NOT SENT - SMTP credentials or enabled recipients are missing."
+                return
+            }
             try {
                 Send-MailMessage `
                     -From $script:username `
@@ -277,7 +340,7 @@ function Test-IPAvailability {
     )
 
 
-    for ($i = 1; $i -le $config.RetryCount; $i++) {
+    for ($i = 1; $i -le $script:config.RetryCount; $i++) {
 
 
         try {
@@ -297,7 +360,9 @@ function Test-IPAvailability {
         catch {
 
 
-            Start-Sleep -Seconds $config.RetryDelaySeconds
+            if ($i -lt $script:config.RetryCount) {
+                Start-Sleep -Seconds $script:config.RetryDelaySeconds
+            }
         }
     }
 
@@ -1516,9 +1581,14 @@ function Import-Config {
         # Reload configuration without restarting the service.
         # This is important when recipients or monitored devices are changed at runtime.
         # It also prevents stale data from the previous config from being kept in memory.
-	$script:config = Get-Content $configFile -Raw | ConvertFrom-Json
+	$script:config = Get-Content $configFile -Raw | ConvertFrom-Json -ErrorAction Stop
+        foreach ($pathSetting in @("LogFolder", "ReportFolder", "CredentialFile")) {
+            if ($script:config.$pathSetting -and -not [System.IO.Path]::IsPathRooted($script:config.$pathSetting)) {
+                $script:config.$pathSetting = Join-Path $PSScriptRoot $script:config.$pathSetting
+            }
+        }
 	$global:config = $script:config
-	$config = $script:config
+        Set-Variable -Name config -Scope Script -Value $script:config
 	
 	$script:recipients = @(
     		$script:config.Recipients |
@@ -1528,9 +1598,9 @@ function Import-Config {
 	$global:recipients = $script:recipients
 	$recipients = $script:recipients
 
-        $script:servers = Get-Content $serverFile -Raw | ConvertFrom-Json
+	$script:servers = Get-Content $serverFile -Raw | ConvertFrom-Json -ErrorAction Stop
 	$global:servers = $script:servers
-	$servers = $script:servers
+        Set-Variable -Name servers -Scope Script -Value $script:servers
 
 	$script:smtpServer = $script:config.SmtpServer
 	$script:smtpPort = $script:config.SmtpPort
@@ -1539,16 +1609,22 @@ function Import-Config {
 	$smtpServer = $script:smtpServer
 	$smtpPort = $script:smtpPort
 	
-	$script:credential = Import-Clixml $script:config.CredentialFile
-	$script:username = $script:credential.UserName
+	$script:credential = $null
+	$script:username = $null
+	$script:notificationMode = if ($script:config.NotificationMode) { $script:config.NotificationMode.ToString().ToLowerInvariant() } else { "disabled" }
+        if ($script:notificationMode -eq "smtp") {
+            if (-not $script:config.CredentialFile -or -not (Test-Path $script:config.CredentialFile)) {
+                throw "SMTP mode requires a valid CredentialFile."
+            }
+            $script:credential = Import-Clixml $script:config.CredentialFile -ErrorAction Stop
+            $script:username = $script:credential.UserName
+        }
 	$global:credential = $script:credential
 	$global:username = $script:username
 	$credential = $script:credential
 	$username = $script:username
 
-        $script:notificationMode = if ($script:config.NotificationMode) { $script:config.NotificationMode } else { "smtp" }
 	$global:notificationMode = $script:notificationMode
-	$notificationMode = $script:notificationMode
 
         $script:ipAddresses = @(
             $script:servers.Devices |
@@ -1559,6 +1635,12 @@ function Import-Config {
 
 	$logFolder = $script:config.LogFolder
 	$reportFolder = $script:config.ReportFolder
+        foreach ($folder in @($logFolder, $reportFolder)) {
+            if (-not (Test-Path $folder)) { New-Item -Path $folder -ItemType Directory -Force | Out-Null }
+        }
+        Set-Variable -Name logFolder -Scope Script -Value $logFolder
+        Set-Variable -Name reportFolder -Scope Script -Value $reportFolder
+        Set-Variable -Name csvFile -Scope Script -Value (Join-Path $reportFolder "AlarmHistory.csv")
 
         $activeIPs = @(
             $global:ipAddresses | ForEach-Object {
@@ -1603,7 +1685,13 @@ while ($true) {
     	$logFolder "IPMonitor_$(Get-Date -Format 'yyyyMMdd').txt"
 
 	Test-AllDevices
+    if (-not $NoDashboard) {
     	Update-Dashboard
+    }
+
+    if ($Once) {
+        break
+    }
 
 	$reloadDashboard = $false
 
