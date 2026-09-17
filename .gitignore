@@ -1,5 +1,6 @@
 Logs/
 Reports/
+test-env/
 *.log
 *.csv
 smtp_cred.xml

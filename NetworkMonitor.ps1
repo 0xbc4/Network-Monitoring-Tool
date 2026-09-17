@@ -37,8 +37,8 @@ $servers = Get-Content $serverFile -Raw | ConvertFrom-Json
 # These values are loaded once and reused by all monitoring functions.
 # The script keeps the last known state for each device so it can detect transitions
 # from UP -> DOWN and DOWN -> UP without sending duplicate alerts.
-$serverStatus = @{}
-$dashboardStatus = @{}
+$global:serverStatus = @{}
+$global:dashboardStatus = @{}
 
 
 $recipients = @(
@@ -56,9 +56,10 @@ $credential = Import-Clixml $config.CredentialFile
 $username = $credential.UserName
 
 
-$ipAddresses = $servers.Devices | Where-Object {
-    $_.Enabled -eq $true
-}
+$global:ipAddresses = @(
+    $servers.Devices |
+    Where-Object { $_.Enabled -eq $true }
+)
 
 
 $lastAlert = "None"
@@ -317,99 +318,83 @@ function Test-IPConnection {
 
     if ($ping) {
 
-    		$dashboardStatus[$ip] = @{
-        		Name      = $name
-        		IP        = $ip
-        		Status    = "UP"
-        		Latency   = if ($null -ne $latency) {
-            			"$latency ms"
-        			}
-        else {
-            "N/A"
+        $global:dashboardStatus[$ip] = @{
+            Name      = $name
+            IP        = $ip
+            Status    = "UP"
+            Latency   = if ($null -ne $latency) {
+                "$latency ms"
+            }
+            else {
+                "N/A"
+            }
+            Critical  = $critical
+            LastCheck = Get-Date
+            DownSince = $null
         }
-        Critical  = $critical
-        LastCheck = Get-Date
-        DownSince = $null
-    	}
 
+        if ($global:serverStatus[$ip] -eq $false) {
+            Send-RecoveryMail -Name $name -IP $ip
 
-	
-        if ($serverStatus[$ip] -eq $false) {
-    		Send-RecoveryMail -Name $name -IP $ip
+            $global:lastAlert = "$name recovered"
 
+            $logMessage = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - DEVICE RECOVERED - $name ($ip) is reachable again."
+            Add-Content -Path $logFile -Value $logMessage
 
-		$global:lastAlert = "$name recovered"
+            Write-AlarmHistory `
+                -Name $name `
+                -IP $ip `
+                -Status "UP"
 
+            $global:serverStatus[$ip] = $true
+        }
 
-		$logMessage = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - RECOVERY - $name ($ip) reachable again."
-
-
-
-		Add-Content -Path $logFile -Value $logMessage
-		
-		Write-AlarmHistory `
-   		-Name $name `
-    		-IP $ip `
-    		-Status "UP"
-
-
-    		$serverStatus[$ip] = $true
-		}
-
-
-        $serverStatus[$ip] = $true
+        $global:serverStatus[$ip] = $true
     }
     else {
 
         # Preserve the initial DOWN timestamp so the outage duration remains accurate.
         if (
-            $dashboardStatus.ContainsKey($ip) -and
-            $dashboardStatus[$ip].Status -eq "DOWN" -and
-            $null -ne $dashboardStatus[$ip].DownSince
+            $global:dashboardStatus.ContainsKey($ip) -and
+            $global:dashboardStatus[$ip].Status -eq "DOWN" -and
+            $null -ne $global:dashboardStatus[$ip].DownSince
         ) {
-        	$downSince = $dashboardStatus[$ip].DownSince
-    	}
-    	else {
-        	$downSince = Get-Date
-    	}
+            $downSince = $global:dashboardStatus[$ip].DownSince
+        }
+        else {
+            $downSince = Get-Date
+        }
 
-    	$dashboardStatus[$ip] = @{
-        	Name      = $name
-        	IP        = $ip
-        	Status    = "DOWN"
-        	Latency   = "N/A"
-        	Critical  = $critical
-        	LastCheck = Get-Date
-        	DownSince = $downSince
-    	}	
+        $global:dashboardStatus[$ip] = @{
+            Name      = $name
+            IP        = $ip
+            Status    = "DOWN"
+            Latency   = "N/A"
+            Critical  = $critical
+            LastCheck = Get-Date
+            DownSince = $downSince
+        }
 
+        if (-not $global:serverStatus.ContainsKey($ip) -or $global:serverStatus[$ip] -eq $true) {
+            $logMessage = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - DEVICE DOWN - $name ($ip) is not accessible."
+            Add-Content -Path $logFile -Value $logMessage
 
-		if (-not $serverStatus.ContainsKey($ip) -or $serverStatus[$ip] -eq $true) {
+            Send-AlertMail `
+                -Name $name `
+                -IP $ip `
+                -Critical $critical
 
-    			$logMessage = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - DOWN - $name ($ip) not accessible."
+            $global:lastAlert = "$name unreachable"
 
-    			Add-Content -Path $logFile -Value $logMessage
+            Write-AlarmHistory `
+                -Name $name `
+                -IP $ip `
+                -Status "DOWN"
 
-   			 Send-AlertMail `
-        		-Name $name `
-        		-IP $ip `
-        		-Critical $critical
-
-    			$global:lastAlert = "$name unreachable"
-
-    			Write-AlarmHistory `
-        		-Name $name `
-        		-IP $ip `
-        		-Status "DOWN"
-
-    			$serverStatus[$ip] = $false
-		}
-    	}
-
-
-	}
-
-
+            $global:serverStatus[$ip] = $false
+        }
+    }
+}
 
 
 
@@ -1566,7 +1551,7 @@ function Import-Config {
         Write-Host $_.Exception.Message -ForegroundColor Red
 
         Add-Content $logFile `
-            "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - CONFIG RELOAD ERROR - $($_.Exception.Message)"
+            "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - CONFIG RELOAD FAILED - $($_.Exception.Message)"
     }
 }
 
