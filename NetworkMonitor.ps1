@@ -3,15 +3,32 @@
 # ==========================================
 param(
     [switch]$Once,
-    [switch]$NoDashboard
+    [switch]$NoDashboard,
+    [string]$ConfigFile,
+    [string]$ServerFile
 )
+
+function Get-SmtpCredential {
+    $usernameVariable = $script:config.SmtpUsernameEnvironmentVariable
+    $passwordVariable = $script:config.SmtpPasswordEnvironmentVariable
+    $smtpUsername = [Environment]::GetEnvironmentVariable($usernameVariable)
+    $smtpPassword = [Environment]::GetEnvironmentVariable($passwordVariable)
+
+    if ([string]::IsNullOrWhiteSpace($usernameVariable) -or [string]::IsNullOrWhiteSpace($passwordVariable) -or
+        [string]::IsNullOrWhiteSpace($smtpUsername) -or [string]::IsNullOrWhiteSpace($smtpPassword)) {
+        throw "SMTP mode requires credentials in the '$usernameVariable' and '$passwordVariable' environment variables."
+    }
+
+    $securePassword = ConvertTo-SecureString -String $smtpPassword -AsPlainText -Force
+    return [PSCredential]::new($smtpUsername, $securePassword)
+}
 
 # IMPORTANT:
 # - The script reads its runtime settings from JSON files in the same folder.
 # - Keep config.json and servers.json outside the repo if they contain production data.
 # - Do not commit real SMTP credentials, internal hostnames, or production IP ranges.
-$configFile = Join-Path $PSScriptRoot "config.json"  # Path to the configuration file
-$serverFile = Join-Path $PSScriptRoot "servers.json" # Path to the server list file
+$configFile = if ($ConfigFile) { $ConfigFile } else { Join-Path $PSScriptRoot "config.json" }
+$serverFile = if ($ServerFile) { $ServerFile } else { Join-Path $PSScriptRoot "servers.json" }
 
 
 if (-not (Test-Path $configFile)) {
@@ -65,7 +82,7 @@ foreach ($device in @($servers.Devices)) {
 }
 
 # Paths may be absolute for service deployments or relative to this script for portable use.
-foreach ($pathSetting in @("LogFolder", "ReportFolder", "CredentialFile")) {
+foreach ($pathSetting in @("LogFolder", "ReportFolder")) {
     if ($config.$pathSetting -and -not [System.IO.Path]::IsPathRooted($config.$pathSetting)) {
         $config.$pathSetting = Join-Path $PSScriptRoot $config.$pathSetting
     }
@@ -96,17 +113,13 @@ $script:smtpServer = $config.SmtpServer
 $script:smtpPort = $config.SmtpPort
 
 
-# SMTP credentials are loaded from an encrypted XML file created locally.
-# This keeps passwords out of the source code and prevents accidental commits.
+# SMTP credentials come from environment variables so the same configuration works
+# on Windows and Linux without platform-specific encrypted credential files.
 $script:credential = $null
 $script:username = $null
 if ($script:notificationMode -eq "smtp") {
-    if (-not $config.CredentialFile -or -not (Test-Path $config.CredentialFile)) {
-        Write-Host "SMTP mode requires a valid CredentialFile. Run '.\Setup-SMTP Credentials.ps1' first." -ForegroundColor Red
-        exit 1
-    }
     try {
-        $script:credential = Import-Clixml $config.CredentialFile -ErrorAction Stop
+        $script:credential = Get-SmtpCredential
         $script:username = $script:credential.UserName
     }
     catch {
@@ -207,16 +220,21 @@ function Send-NotificationMessage {
                 return
             }
             try {
-                Send-MailMessage `
-                    -From $script:username `
-                    -To $script:recipients `
-                    -Subject $Subject `
-                    -Body $Body `
-                    -SmtpServer $script:smtpServer `
-                    -Port $script:smtpPort `
-                    -UseSsl `
-                    -Credential $script:credential `
-                    -ErrorAction Stop
+                $message = [System.Net.Mail.MailMessage]::new()
+                $client = [System.Net.Mail.SmtpClient]::new($script:smtpServer, [int]$script:smtpPort)
+                try {
+                    $message.From = $script:username
+                    foreach ($recipient in $script:recipients) { [void]$message.To.Add($recipient) }
+                    $message.Subject = $Subject
+                    $message.Body = $Body
+                    $client.EnableSsl = $true
+                    $client.Credentials = $script:credential
+                    $client.Send($message)
+                }
+                finally {
+                    $message.Dispose()
+                    $client.Dispose()
+                }
             }
             catch {
                 $errorMessage = "MAIL ERROR - $DeviceName ($DeviceIP) - $($_.Exception.Message)"
@@ -1584,7 +1602,7 @@ function Import-Config {
         # This is important when recipients or monitored devices are changed at runtime.
         # It also prevents stale data from the previous config from being kept in memory.
 	$script:config = Get-Content $configFile -Raw | ConvertFrom-Json -ErrorAction Stop
-        foreach ($pathSetting in @("LogFolder", "ReportFolder", "CredentialFile")) {
+        foreach ($pathSetting in @("LogFolder", "ReportFolder")) {
             if ($script:config.$pathSetting -and -not [System.IO.Path]::IsPathRooted($script:config.$pathSetting)) {
                 $script:config.$pathSetting = Join-Path $PSScriptRoot $script:config.$pathSetting
             }
@@ -1615,10 +1633,7 @@ function Import-Config {
 	$script:username = $null
 	$script:notificationMode = if ($script:config.NotificationMode) { $script:config.NotificationMode.ToString().ToLowerInvariant() } else { "disabled" }
         if ($script:notificationMode -eq "smtp") {
-            if (-not $script:config.CredentialFile -or -not (Test-Path $script:config.CredentialFile)) {
-                throw "SMTP mode requires a valid CredentialFile."
-            }
-            $script:credential = Import-Clixml $script:config.CredentialFile -ErrorAction Stop
+            $script:credential = Get-SmtpCredential
             $script:username = $script:credential.UserName
         }
 	$global:credential = $script:credential
@@ -1699,7 +1714,7 @@ while ($true) {
 
 for ($i = 0; $i -lt $config.CheckIntervalSeconds; $i++) {
 
-    if ([Console]::KeyAvailable) {
+    if (-not $NoDashboard -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected -and [Console]::KeyAvailable) {
 
         $key = [Console]::ReadKey($true)
 

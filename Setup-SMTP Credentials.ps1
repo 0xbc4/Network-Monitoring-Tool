@@ -1,18 +1,21 @@
-﻿# IMPORTANT:
-# This script creates the encrypted SMTP credential file locally.
-# The XML file contains your email username/password in an encrypted Windows format,
-# so it should never be committed to GitHub or shared with others.
-$credFile = Join-Path $PSScriptRoot "smtp_cred.xml" # Path to the credential file
+param(
+    [string]$UsernameVariable = "NETWORK_MONITOR_SMTP_USERNAME",
+    [string]$PasswordVariable = "NETWORK_MONITOR_SMTP_PASSWORD"
+)
 
-if (-not (Test-Path $credFile)) {
+# The monitor reads SMTP credentials from environment variables. This avoids
+# Windows DPAPI/CLIXML files, which cannot be shared with Linux hosts.
+$credential = Get-Credential -Message "Enter the SMTP account credentials"
 
-    Write-Host "SMTP credential file not found." -ForegroundColor Yellow
-
-    $cred = Get-Credential
-
-    $cred | Export-Clixml $credFile
-
-    Write-Host "Credential file created." -ForegroundColor Green
+if ($IsWindows -or $env:OS -eq "Windows_NT") {
+    [Environment]::SetEnvironmentVariable($UsernameVariable, $credential.UserName, "User")
+    [Environment]::SetEnvironmentVariable($PasswordVariable, $credential.GetNetworkCredential().Password, "User")
+    Write-Host "SMTP variables were saved for the current Windows user. Open a new PowerShell session before starting the monitor." -ForegroundColor Green
 }
-
-$credential = Import-Clixml $credFile 
+else {
+    Write-Host "Credentials were not written to disk on Linux." -ForegroundColor Yellow
+    Write-Host "For an interactive session, set the variables before starting the monitor:" -ForegroundColor Yellow
+    Write-Host "`$env:$UsernameVariable = '$($credential.UserName)'"
+    Write-Host "`$env:$PasswordVariable = '<password>'"
+    Write-Host "For systemd, place them in /etc/network-monitor/smtp.env with permissions 600." -ForegroundColor Yellow
+}

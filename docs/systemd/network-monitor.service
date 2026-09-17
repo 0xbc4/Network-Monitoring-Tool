@@ -1,0 +1,21 @@
+[Unit]
+Description=Network Monitoring Tool
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=network-monitor
+Group=network-monitor
+WorkingDirectory=/opt/network-monitor
+EnvironmentFile=-/etc/network-monitor/smtp.env
+ExecStart=/usr/bin/pwsh -NoProfile -File /opt/network-monitor/NetworkMonitor.ps1 -NoDashboard -ConfigFile /etc/network-monitor/config.json -ServerFile /etc/network-monitor/servers.json
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/network-monitor
+
+[Install]
+WantedBy=multi-user.target

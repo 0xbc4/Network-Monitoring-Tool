@@ -1,6 +1,6 @@
 # Release Notes
 
-## v0.1.1-alpha
+## v0.2.0-alpha
 
 ### Highlights
 - Added validation for configuration files, notification modes, device entries, and polling values.
@@ -9,10 +9,13 @@
 - Added `-Once` and `-NoDashboard` options for scheduled and non-interactive checks.
 - Prevented the device-management Back action from blocking while it rechecks every enabled device.
 - Added a configurable ICMP timeout through `PingTimeoutMilliseconds`.
+- Replaced Windows-only encrypted CLIXML SMTP credentials with environment variables.
+- Replaced `Send-MailMessage` with platform-neutral .NET SMTP delivery and added a systemd service example.
 
 ### Upgrade Notes
 - Add `"PingTimeoutMilliseconds": 1000` to existing configuration files.
-- The default configuration now uses project-relative `Logs`, `Reports`, and `smtp_cred.xml` paths.
+- The default configuration uses project-relative `Logs` and `Reports` paths.
+- SMTP mode now reads `NETWORK_MONITOR_SMTP_USERNAME` and `NETWORK_MONITOR_SMTP_PASSWORD` by default.
 
 ## v0.1.0-alpha
 

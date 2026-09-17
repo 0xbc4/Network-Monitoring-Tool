@@ -20,7 +20,7 @@ The tool currently supports:
 
 This repository is currently in alpha stage and is tagged as:
 
-- v0.1.1-alpha
+- v0.2.0-alpha
 
 The project is intentionally positioned as a practical test and validation release before the beta iteration, where the monitoring logic, alert pipeline, and Linux deployment model will be hardened further.
 
@@ -55,7 +55,7 @@ The project is intentionally positioned as a practical test and validation relea
 
 ### Security and Configuration
 
-- SMTP credentials stored using encrypted local XML files
+- SMTP credentials sourced from environment variables
 - Config values separated from script logic
 - Runtime reload support for recipients and devices
 - Safe testing mode to prevent accidental production alerts during validation
@@ -84,13 +84,15 @@ Network Monitoring Tool/
 
 Update the values in [config.json](config.json) and [servers.json](servers.json) for your deployment.
 
-### 2. Create the encrypted SMTP credential file
+### 2. Configure SMTP credentials (only for `smtp` mode)
 
 ```powershell
 .\Setup-SMTP Credentials.ps1
 ```
 
-This creates a local encrypted XML credential file used by the monitoring script.
+On Windows, this stores the credentials in user-level environment variables. On
+Linux, set the variables in the calling shell or in a protected systemd
+environment file. No credential file is shared between operating systems.
 
 ### 3. Start the monitoring tool
 
@@ -123,7 +125,8 @@ The project reads its runtime configuration from JSON files so key settings rema
   "SmtpPort": 587,
   "LogFolder": "Logs",
   "ReportFolder": "Reports",
-  "CredentialFile": "smtp_cred.xml",
+  "SmtpUsernameEnvironmentVariable": "NETWORK_MONITOR_SMTP_USERNAME",
+  "SmtpPasswordEnvironmentVariable": "NETWORK_MONITOR_SMTP_PASSWORD",
   "CheckIntervalSeconds": 60,
   "RetryCount": 3,
   "RetryDelaySeconds": 1,
@@ -164,17 +167,35 @@ The notification layer supports several modes depending on deployment stage:
 
 ## Security Notes
 
-- SMTP credentials are saved locally as encrypted XML files
-- No plaintext credentials should be committed to the repository
+- SMTP credentials are read from environment variables; never commit their values
+- Linux systemd deployments should store those variables in a root-owned `600` file
 - Production IP ranges and internal hostnames should remain outside public source control
 - The safe test mode is recommended before enabling real delivery in production
 - Relative log, report, and credential paths are resolved from the project folder; absolute paths remain supported.
 
-## Operational Notes
+## Windows and Linux
 
-- The monitoring script is built for Windows-first PowerShell environments
-- The project is being prepared for a future Linux and systemd-oriented deployment model
-- The current alpha release focuses on stability and safe validation flows rather than full production alert transport
+The monitor runs on PowerShell 7+ (`pwsh`) on both Windows and Linux. It uses
+platform-neutral .NET networking and SMTP APIs, and accepts alternate settings
+files through `-ConfigFile` and `-ServerFile`.
+
+For Linux, install PowerShell 7, keep the application under `/opt/network-monitor`,
+and put environment-specific JSON files under `/etc/network-monitor`. Set
+`LogFolder` and `ReportFolder` in that config to writable absolute paths such as
+`/var/lib/network-monitor/Logs` and `/var/lib/network-monitor/Reports`.
+
+An example service unit is available at
+[`docs/systemd/network-monitor.service`](docs/systemd/network-monitor.service).
+Copy it to `/etc/systemd/system/`, create `/etc/network-monitor/smtp.env` with:
+
+```text
+NETWORK_MONITOR_SMTP_USERNAME=monitor@example.com
+NETWORK_MONITOR_SMTP_PASSWORD=replace-with-a-secret
+```
+
+Then restrict it with `chmod 600 /etc/network-monitor/smtp.env`, run
+`systemctl daemon-reload`, and enable the service with
+`systemctl enable --now network-monitor`.
 
 ## Documentation
 
