@@ -1,96 +1,117 @@
-# Camera Server Monitoring
+# Network Monitoring Tool
 
-PowerShell-based monitoring and alerting solution for network devices and servers.
+A PowerShell-based infrastructure monitoring solution for tracking IP reachability, device availability, and alert conditions across networked systems.
 
 ## Overview
 
-This project monitors infrastructure devices using ICMP ping checks and sends notifications when devices become unreachable.
+This project continuously checks whether configured devices are reachable over the network and raises alerts when failures or recoveries are detected. It is designed for environments that need basic but reliable uptime monitoring without requiring a heavy third-party platform.
 
-The solution provides:
+The tool currently supports:
 
-- Availability monitoring
-- Email alerting
-- Recovery notifications
-- Daily logging
-- Alarm history reporting
-- Secure SMTP credential storage
-- Centralized configuration management
+- ICMP-based health checks
+- Device status tracking
+- Alert and recovery logic
+- Email notification support through SMTP
+- Safe test mode to prevent noisy alerts during validation
+- Daily logging and reporting
+- Runtime configuration reload without restarting the script
+
+## Current Status
+
+This repository is currently in alpha stage and is tagged as:
+
+- v0.1.0-alpha
+
+The project is intentionally positioned as a practical test and validation release before the beta iteration, where the monitoring logic, alert pipeline, and Linux deployment model will be hardened further.
 
 ## Features
 
-### Monitoring
+### Network Monitoring
 
-- Continuous device health monitoring
-- Configurable monitoring interval
-- Configurable retry attempts
-- Multiple device support
-- Device enable/disable capability
+- Continuous device availability checks
+- Configurable polling interval
+- Retries and delay handling
+- Device enable/disable control
+- Critical versus warning device classification
+- Live dashboard for active monitoring status
 
-### Alerting
+### Alerting and Recovery
 
-- Critical outage notifications
-- Warning notifications
-- Recovery notifications
-- Multiple recipients support
+- Alert notifications for unreachable devices
+- Recovery notifications when a device becomes reachable again
+- Multiple recipient support
+- Flexible notification modes:
+  - disabled
+  - stdout
+  - test-safe
+  - smtp
 
-### Security
-
-- SMTP credentials stored using Windows DPAPI encryption
-- No plain-text passwords in source code
-
-### Logging
+### Logging and Reporting
 
 - Daily log files
-- Connection failure logging
-- Recovery logging
-- SMTP error logging
+- Alert and recovery event history
+- CSV-compatible reporting structure
+- Support for reporting and auditing in operational scenarios
 
-### Reporting
+### Security and Configuration
 
-- CSV-based alarm history
-- UP/DOWN event tracking
-- Excel-compatible reporting structure
+- SMTP credentials stored using encrypted local XML files
+- Config values separated from script logic
+- Runtime reload support for recipients and devices
+- Safe testing mode to prevent accidental production alerts during validation
 
-## Folder Structure
+## Repository Structure
 
 ```text
-Network Device Monitoring
+Network Monitoring Tool/
 ├── NetworkMonitor.ps1
 ├── Setup-SMTP Credentials.ps1
 ├── config.json
 ├── servers.json
 ├── README.md
+├── RELEASE_NOTES.md
+├── BETA_ROADMAP.md
+├── LICENSE
 ├── Logs/
-└── Reports/
+├── Reports/
+└── test-env/
 ```
 
-## Installation and Setup
+## Quick Start
 
-Follow these steps in order before running the monitoring service.
+### 1. Configure the environment
 
-1. Edit the values in `config.json` and `servers.json` for your environment.
-2. Run `Setup-SMTP Credentials.ps1` once to create the encrypted SMTP credential file.
-3. Confirm that `smtp_cred.xml` was generated successfully.
-4. Run `NetworkMonitor.ps1` to start monitoring.
+Update the values in [config.json](config.json) and [servers.json](servers.json) for your deployment.
+
+### 2. Create the encrypted SMTP credential file
 
 ```powershell
-# 1) Create the encrypted SMTP credential file
 .\Setup-SMTP Credentials.ps1
+```
 
-# 2) Start the monitoring loop
+This creates a local encrypted XML credential file used by the monitoring script.
+
+### 3. Start the monitoring tool
+
+```powershell
 .\NetworkMonitor.ps1
 ```
 
-> Important: Run the SMTP setup script before the main monitor. The monitor loads the encrypted credential file from `config.json` to send email alerts.
+### 4. Validate in safe mode
+
+The project is currently configured to use a safe no-noise validation mode by default, which suppresses real alert delivery while allowing monitoring behavior to be tested safely.
 
 ## Configuration
 
-The project reads settings from JSON files so deployment details stay outside the script source.
+The project reads its runtime configuration from JSON files so key settings remain external to the script logic.
 
-Example `config.json`:
+### Example config
 
 ```json
 {
+  "NotificationMode": "test-safe",
+  "AlertTransport": "smtp",
+  "SecureEmailMode": "disabled",
   "SmtpServer": "smtp.example.com",
   "SmtpPort": 587,
   "LogFolder": "C:\\Monitoring\\Logs",
@@ -106,7 +127,7 @@ Example `config.json`:
 }
 ```
 
-Example `servers.json`:
+### Example device list
 
 ```json
 {
@@ -121,12 +142,37 @@ Example `servers.json`:
 }
 ```
 
+## Alert Modes
+
+The notification layer supports several modes depending on deployment stage:
+
+- disabled: notifications are turned off
+- stdout: notifications are printed to console output
+- test-safe: validation mode that suppresses actual alerts while preserving visibility in logs
+- smtp: production alert delivery through SMTP credentials
+
+## Security Notes
+
+- SMTP credentials are saved locally as encrypted XML files
+- No plaintext credentials should be committed to the repository
+- Production IP ranges and internal hostnames should remain outside public source control
+- The safe test mode is recommended before enabling real delivery in production
+
+## Operational Notes
+
+- The monitoring script is built for Windows-first PowerShell environments
+- The project is being prepared for a future Linux and systemd-oriented deployment model
+- The current alpha release focuses on stability and safe validation flows rather than full production alert transport
+
+## Documentation
+
+- [RELEASE_NOTES.md](RELEASE_NOTES.md)
+- [BETA_ROADMAP.md](BETA_ROADMAP.md)
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-## Notes
+## Contact and Notes
 
-- Replace the sample values and paths before running in a real environment.
-- The encrypted credential file is created locally with the setup script.
-- Do not commit real SMTP credentials, production IPs, or internal hostnames.
+This project is intended to evolve from a testable alpha prototype into a more hardened beta version with stronger security, reporting, automation, and Linux compatibility.
